@@ -1,7 +1,10 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { textToMorse } from '../utils/morse-code'
 import type { DrillPhase, DrillRole, DrillTask, DrillSession, DrillScenarioConfig } from '../types'
+
+const STORAGE_KEY_CURRENT = 'drill-current-session'
+const STORAGE_KEY_HISTORY = 'drill-history'
 
 const ROLE_LABELS: Record<DrillRole, string> = {
   station_a: 'A台',
@@ -25,9 +28,31 @@ const DEFAULT_CONFIG: DrillScenarioConfig = {
   },
 }
 
+function normalizeMorse(morse: string): string {
+  return morse.trim().split(/\s+/).join(' ')
+}
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+function saveToStorage(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // ignore
+  }
+}
+
 export const useDrillStore = defineStore('drill', () => {
-  const sessions = ref<DrillSession[]>([])
-  const currentSession = ref<DrillSession | null>(null)
+  const sessions = ref<DrillSession[]>(loadFromStorage(STORAGE_KEY_HISTORY, []))
+  const currentSession = ref<DrillSession | null>(loadFromStorage(STORAGE_KEY_CURRENT, null))
   const userInput = ref('')
   const isPlaying = ref(false)
 
@@ -46,6 +71,14 @@ export const useDrillStore = defineStore('drill', () => {
     const done = s.tasks.filter(t => t.completed).length
     return { done, total: s.totalTasks, percent: Math.round(done / s.totalTasks * 100) }
   })
+
+  watch(currentSession, (val) => {
+    saveToStorage(STORAGE_KEY_CURRENT, val)
+  }, { deep: true })
+
+  watch(sessions, (val) => {
+    saveToStorage(STORAGE_KEY_HISTORY, val)
+  }, { deep: true })
 
   function getAudioCtx(): AudioContext {
     if (!audioCtx) audioCtx = new AudioContext()
@@ -163,12 +196,15 @@ export const useDrillStore = defineStore('drill', () => {
   }
 
   function submitTask() {
-    if (!currentTask.value) return
-    const task = currentTask.value
-    const session = currentSession.value!
+    if (!currentSession.value) return
+    const session = currentSession.value
+    const idx = session.currentTaskIndex
+    if (idx >= session.tasks.length) return
 
-    const userMorse = userInput.value.trim()
-    const correct = userMorse === task.expectedMorse
+    const task = session.tasks[idx]
+    const userMorse = normalizeMorse(userInput.value)
+    const expectedMorse = normalizeMorse(task.expectedMorse)
+    const correct = userMorse === expectedMorse
 
     task.userInput = userMorse
     task.correct = correct
@@ -182,17 +218,24 @@ export const useDrillStore = defineStore('drill', () => {
     if (session.currentTaskIndex >= session.tasks.length) {
       session.completed = true
       session.endTime = Date.now()
-      sessions.value.unshift(session)
+      const existingIdx = sessions.value.findIndex(s => s.id === session.id)
+      if (existingIdx >= 0) {
+        sessions.value[existingIdx] = { ...session }
+      } else {
+        sessions.value.unshift({ ...session })
+      }
     }
 
     userInput.value = ''
   }
 
   function skipTask() {
-    if (!currentTask.value) return
-    const task = currentTask.value
-    const session = currentSession.value!
+    if (!currentSession.value) return
+    const session = currentSession.value
+    const idx = session.currentTaskIndex
+    if (idx >= session.tasks.length) return
 
+    const task = session.tasks[idx]
     task.userInput = ''
     task.correct = false
     task.completed = true
@@ -203,7 +246,12 @@ export const useDrillStore = defineStore('drill', () => {
     if (session.currentTaskIndex >= session.tasks.length) {
       session.completed = true
       session.endTime = Date.now()
-      sessions.value.unshift(session)
+      const existingIdx = sessions.value.findIndex(s => s.id === session.id)
+      if (existingIdx >= 0) {
+        sessions.value[existingIdx] = { ...session }
+      } else {
+        sessions.value.unshift({ ...session })
+      }
     }
 
     userInput.value = ''
