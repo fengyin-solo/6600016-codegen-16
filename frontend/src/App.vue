@@ -42,6 +42,11 @@
       <TrainingMode />
     </div>
 
+    <!-- Drill Scenario -->
+    <div v-if="activeTab === 'drill'" class="flex flex-col gap-4">
+      <DrillScenario />
+    </div>
+
     <!-- Reference Table -->
     <div v-if="activeTab === 'ref'" class="bg-gray-900 rounded-xl p-4">
       <h3 class="text-amber-300 font-bold mb-3">莫尔斯码速查表</h3>
@@ -78,6 +83,7 @@ import { useMorseStore } from './store/morse'
 import { MORSE_TABLE } from './utils/morse-code'
 import WaveformDisplay from './components/WaveformDisplay.vue'
 import TrainingMode from './components/TrainingMode.vue'
+import DrillScenario from './components/DrillScenario.vue'
 
 const store = useMorseStore()
 const morseTable = MORSE_TABLE
@@ -85,6 +91,7 @@ const morseTable = MORSE_TABLE
 const tabs = [
   { id: 'translate', label: '编码/解码' },
   { id: 'train', label: '训练模式' },
+  { id: 'drill', label: '值班演练' },
   { id: 'ref', label: '速查表' },
 ]
 const activeTab = ref('translate')
